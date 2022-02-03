@@ -1,6 +1,7 @@
-## ----setup, include=FALSE----------------------------------
+## ----setup, include=FALSE------------------------------------------
 library(tidyverse); library(broom);
-library(knitr); library(ggplot2)
+library(knitr); library(ggplot2);
+library(geomtextpath);
 knitr::opts_chunk$set(echo = T, warning = F, message = F);
 knitr::knit_hooks$set(mysize = function(before, options, envir) {
   if (before) 
@@ -23,12 +24,12 @@ fig.x = 16 * figure_scaler;
 fig.y = 9 * figure_scaler;
 
 
-## ---- echo = TRUE, include = TRUE, eval = FALSE------------
+## ---- echo = TRUE, include = TRUE, eval = FALSE--------------------
 ## library(lme4)
 ## ?sleepstudy
 
 
-## ---- echo = FALSE-----------------------------------------
+## ---- echo = FALSE-------------------------------------------------
 library(lme4);
 
 
@@ -39,21 +40,21 @@ ggplot(sleepstudy, aes(x = Days, y = Reaction, group = Subject)) +
   theme(text = element_text(size = 22));
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 cm_sleep <- lmer(Reaction ~ Days + (1 | Subject), sleepstudy)
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 mm_sleep_ind <- lm(Reaction ~ Days, sleepstudy)
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 library(nlme)
 mm_sleep_cs <- gls(Reaction ~ Days, sleepstudy, 
                    correlation = corCompSymm(form = ~1|Subject))
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 library(geepack)
 mm_sleep_gee_cs <- 
   geeglm(Reaction ~ Days, 
@@ -62,14 +63,14 @@ mm_sleep_gee_cs <-
          corstr = "exchangeable")
 
 
-## ---- cache = F, message = F, results = F------------------
+## ---- cache = F, message = F, results = F--------------------------
 library(gee)
 mm_sleep_gee_cs_alt <-
   gee(Reaction ~ Days, data = sleepstudy, id = Subject,
       corstr = "exchangeable")
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 summary(cm_sleep)$coefficients
 summary(mm_sleep_ind)$coefficients 
 summary(mm_sleep_cs)$tTable
@@ -77,7 +78,7 @@ summary(mm_sleep_gee_cs)$coefficients
 summary(mm_sleep_gee_cs_alt)$coefficients
 
 
-## ----------------------------------------------------------
+## ------------------------------------------------------------------
 set.seed(1)
 sleepstudy %>% 
   # Randomly permuting rows
@@ -90,11 +91,11 @@ sleepstudy %>%
 
 
 
-## ----------------------------------------------------------
+## ------------------------------------------------------------------
 summary(mm_sleep_gee_cs)$corr
 
 
-## ---- echo = F---------------------------------------------
+## ---- echo = F-----------------------------------------------------
 ggplot(data = bind_cols(mm_sleep_gee_cs$data, 
                         Residuals = residuals(mm_sleep_gee_cs)[,1]),
        aes(x = Days, y = Residuals, group = Subject)) + 
@@ -103,7 +104,7 @@ ggplot(data = bind_cols(mm_sleep_gee_cs$data,
   theme(text = element_text(size = 22));
 
 
-## ---- echo = F, fig.width = fig.x, fig.height =  1.3*fig.y----
+## ---- echo = F, fig.width = fig.x, fig.height =  1.3*fig.y---------
 library(ggcorrplot)
 bind_cols(mm_sleep_gee_cs$data, 
           Residuals = residuals(mm_sleep_gee_cs)[,1]) %>% 
@@ -115,7 +116,7 @@ bind_cols(mm_sleep_gee_cs$data,
   ggcorrplot(lab = TRUE, show.legend = FALSE)
 
 
-## ---- cache = F--------------------------------------------
+## ---- cache = F----------------------------------------------------
 # Compound-symmetric correlation
 summary(mm_sleep_gee_cs)$coefficients
 
@@ -128,41 +129,64 @@ mm_sleep_gee_ar1 <-
 summary(mm_sleep_gee_ar1)$coefficients
 
 
-## ----------------------------------------------------------
+## ------------------------------------------------------------------
 summary(cm_sleep)$coefficients
 
 
-## ----------------------------------------------------------
+## ------------------------------------------------------------------
 cm_sleep_random_slope <- 
   lmer(Reaction ~ Days + (Days | Subject), sleepstudy);
 summary(cm_sleep_random_slope)$coefficients
 
 
-## ----------------------------------------------------------
+## ------------------------------------------------------------------
 extractAIC(cm_sleep)
 extractAIC(cm_sleep_random_slope) # Better fit with random slope
 
 
-## ---- echo = F---------------------------------------------
-ranef(cm_sleep_random_slope)
+## ---- echo = F-----------------------------------------------------
+ranef(cm_sleep_random_slope)$Subject
 
 
-## ---- echo = F, fig.width=1.1*fig.x, fig.height=1.1*fig.y----
-ggplot(data = bind_cols(sleepstudy, 
-                        Prediction = predict(cm_sleep_random_slope, newdata = sleepstudy)),
-       aes(x = Days, y = Prediction, group = Subject)) + 
-  geom_line(alpha = 0.5) + 
+## ---- echo = F-----------------------------------------------------
+round(colMeans(ranef(cm_sleep_random_slope)$Subject), 4)
+
+
+## ---- echo = F, fig.width=1.1*fig.x, fig.height=1.1*fig.y----------
+sleepstudy_predictions = 
+  bind_rows(
+    bind_cols(sleepstudy, 
+              Prediction = predict(cm_sleep_random_slope, newdata = sleepstudy)),
+    bind_cols(Reaction = NA, 
+              Days = sleepstudy %>% filter(Subject == first(Subject)) %>% pull(Days), 
+              Subject = "Population",
+              Prediction = predict(cm_sleep_random_slope, 
+                                   newdata = filter(sleepstudy,  Subject == first(Subject)),
+                                   re.form = ~0)))
+
+ggplot() + 
+  geom_textline(data = filter(sleepstudy_predictions, Subject != "Population"), 
+                aes(x = Days, y = Prediction, group = Subject, label = Subject),
+                hjust = 0.9,
+                alpha = 0.5) + 
+  geom_textline(data = filter(sleepstudy_predictions, Subject == "Population"),
+                aes(x = Days, y = Prediction, label = Subject), 
+                linewidth = 2,
+                linecolor = "#2b8cbe",
+                size = 8) + 
   scale_x_continuous(breaks = 0:9, minor_breaks = NULL) + 
   theme(text = element_text(size = 22));
 
 
-## ---- echo = F, fig.width=1.1*fig.x, fig.height=1.1*fig.y----
-ggplot(data = bind_cols(sleepstudy, 
-                        Prediction = predict(cm_sleep_random_slope, newdata = sleepstudy)) %>%
+## ---- echo = F, fig.width=1.1*fig.x, fig.height=1.1*fig.y----------
+ggplot(data = sleepstudy_predictions %>%
          filter(Subject %in% c("308", "309", "310", "330")),
-       aes(x = Days, y = Prediction, group = Subject, color = Subject)) + 
-  geom_line(size = 1) + 
-  geom_line(aes(y = Reaction), size = 1, linetype = "dashed") + 
+       aes(x = Days, y = Prediction, group = Subject, color = Subject, label = Subject)) + 
+  geom_textline(linewidth = 1.5, 
+            size = 8) + 
+  geom_line(aes(y = Reaction), 
+            size = 1.5,
+            linetype = "dashed") + 
   scale_color_brewer(palette = "Dark2") + 
   guides(color = "none") + 
   scale_x_continuous(breaks = 0:9, minor_breaks = NULL) + 
